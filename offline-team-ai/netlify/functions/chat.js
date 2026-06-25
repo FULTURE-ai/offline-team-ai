@@ -299,17 +299,10 @@ function isProductQuery(text) {
 // 商品清冊父頁面 ID
 const CATALOG_PAGE_ID = '38adc0b670b180b3a6abf9aa45139243';
 
-// 判斷要查哪個子頁面
-function getTargetSubpage(userMsg, childPages) {
-  const serviceKw = ['組裝', '安裝', '保固', '退', '換貨', '退款', '客服', '故障', '壞', '缺件', '不能用', '瑕疵', '說明書', '教學', '影片'];
-  const specKw    = ['尺寸', '重量', '材質', '規格', '容量', '承重', '顏色'];
-
-  const isService = serviceKw.some(k => userMsg.includes(k));
-  const isSpec    = specKw.some(k => userMsg.includes(k));
-
-  if (isService) return childPages.find(p => p.title.includes('C') || p.title.includes('售後')) || childPages[2];
-  if (isSpec)    return childPages.find(p => p.title.includes('A') || p.title.includes('規格')) || childPages[0];
-  return childPages[2]; // 預設查售後手冊
+// 從問句萃取商品名稱（取動詞前的名詞）
+function extractProductName(text) {
+  const m = text.match(/^(.{2,8}?)(?:怎麼|如何|為什麼|的|問題|能不能|有沒有|可以|是否)/);
+  return m ? m[1].trim() : text.slice(0, 6);
 }
 
 async function getNotionContext(userMsg) {
@@ -318,21 +311,41 @@ async function getNotionContext(userMsg) {
 
   try {
     const ctx = await withTimeout((async () => {
-      // Step 1：抓父頁面的子頁面清單
+      const productName = extractProductName(userMsg);
+
+      // Step 1：用商品名稱搜尋 Notion
+      const pages = await notionSearch(productName);
+      if (pages.length) {
+        const page = pages[0];
+        const title = page.properties?.title?.title?.[0]?.plain_text
+                   || page.properties?.Name?.title?.[0]?.plain_text
+                   || productName;
+        const blocks = await fetchBlocks(page.id);
+        const content = extractText(blocks);
+        if (content) return `\n\n【${title}】\n${content}`;
+      }
+
+      // Step 2：搜尋無結果，直接導航 C.售後 → 各商品子頁
       const parentBlocks = await fetchBlocks(CATALOG_PAGE_ID);
-      const childPages = parentBlocks
-        .filter(b => b.type === 'child_page')
-        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+      const l1 = parentBlocks.filter(b => b.type === 'child_page')
+                              .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+      const serviceSection = l1.find(p => p.title.includes('C') || p.title.includes('售後')) || l1[l1.length - 1];
+      if (!serviceSection) return `__NO_SERVICE_SECTION__`;
 
-      if (!childPages.length) return `__NO_CHILDREN__`;
+      const serviceBlocks = await fetchBlocks(serviceSection.id);
+      const l2 = serviceBlocks.filter(b => b.type === 'child_page')
+                               .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
 
-      // Step 2：選對應子頁面
-      const target = getTargetSubpage(userMsg, childPages);
-      if (!target) return '';
+      // 找最接近的商品頁面
+      const match = l2.find(p => p.title.includes(productName) || userMsg.includes(p.title));
+      const target = match || l2[0];
+      if (!target) {
+        const content = extractText(serviceBlocks);
+        return content ? `\n\n【${serviceSection.title}】\n${content}` : `__NO_PRODUCT_PAGE__`;
+      }
 
-      // Step 3：抓子頁面內容
-      const blocks = await fetchBlocks(target.id);
-      const content = extractText(blocks);
+      const productBlocks = await fetchBlocks(target.id);
+      const content = extractText(productBlocks);
       return content ? `\n\n【${target.title}】\n${content}` : `__EMPTY:${target.title}__`;
     })(), NOTION_TIMEOUT_MS);
 
@@ -369,7 +382,7 @@ exports.handler = async (event) => {
     const systemPrompt = SYSTEM_PROMPT + notionCtx;
 
     // Debug header（上線後移除）
-    const debugInfo = `[DEBUG] isProduct=${isProductQuery(lastUserMsg)} notionLen=${notionCtx.length}\n\n`;
+    const debugInfo = `[DEBUG] isProduct=${isProductQuery(lastUserMsg)} notionLen=${notionCtx.length} hasToken=${!!process.env.NOTION_TOKEN}\n\n`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
