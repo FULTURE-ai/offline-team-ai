@@ -277,6 +277,7 @@ const welcomeEl= document.getElementById('welcome');
 const statusDot= document.getElementById('statusDot');
 
 const messages = [];  // conversation history
+let composing  = false;
 
 // ── Auto-resize textarea ──
 inputEl.addEventListener('input', () => {
@@ -284,9 +285,13 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
 });
 
+// ── IME composition tracking (中文輸入法) ──
+inputEl.addEventListener('compositionstart', () => { composing = true; });
+inputEl.addEventListener('compositionend',   () => { setTimeout(() => { composing = false; }, 0); });
+
 // ── Enter to send ──
 inputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !composing) {
     e.preventDefault();
     send();
   }
@@ -390,8 +395,10 @@ async function send() {
     hideTyping();
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: '未知錯誤' }));
-      appendMsg('ai', `⚠️ ${err.error || '請求失敗，請稍後再試。'}`);
+      const raw = await res.text();
+      let msg;
+      try { msg = JSON.parse(raw).error; } catch { msg = raw; }
+      appendMsg('ai', `⚠️ HTTP ${res.status}: ${msg || raw}`);
       return;
     }
 
