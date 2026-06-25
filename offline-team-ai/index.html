@@ -31,6 +31,29 @@
     margin: 0 auto;
   }
 
+  /* ── Drop overlay ── */
+  .drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(102,107,67,.1);
+    border: 3px dashed var(--green);
+    z-index: 200;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    pointer-events: none;
+  }
+  .drop-overlay.active { display: flex; }
+  .drop-overlay svg { width: 40px; height: 40px; fill: var(--green); opacity: .7; }
+  .drop-overlay p {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--green);
+    letter-spacing: .5px;
+  }
+
   /* ── Header ── */
   header {
     display: flex;
@@ -107,6 +130,15 @@
     box-shadow: 0 1px 3px rgba(0,0,0,.08);
   }
 
+  /* image thumbnail in user bubble */
+  .msg.user .bubble img.attach-thumb {
+    max-width: 220px;
+    max-height: 160px;
+    border-radius: 3px;
+    display: block;
+    margin-bottom: 6px;
+  }
+
   /* markdown-lite */
   .bubble strong { font-weight: 700; }
   .bubble em     { font-style: italic; }
@@ -173,11 +205,64 @@
     border-top: 1px solid var(--parchment-dark);
     flex-shrink: 0;
   }
+
+  /* Attachment preview row */
+  .attach-row {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: #fff;
+    border: 1px solid var(--parchment-dark);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--charcoal);
+  }
+  .attach-row.show { display: flex; }
+  .attach-row img {
+    width: 36px; height: 36px;
+    object-fit: cover;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .attach-row .attach-icon { font-size: 18px; flex-shrink: 0; }
+  .attach-row .attach-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .attach-row .attach-remove {
+    cursor: pointer;
+    color: #bbb;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+    flex-shrink: 0;
+    transition: color .15s;
+  }
+  .attach-row .attach-remove:hover { color: var(--charcoal); }
+
   .input-row {
     display: flex;
     gap: 8px;
     align-items: flex-end;
   }
+
+  /* Attach button */
+  label.attach-btn {
+    flex-shrink: 0;
+    width: 42px; height: 42px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--parchment-dark);
+    border-radius: 4px;
+    transition: color .2s;
+  }
+  label.attach-btn:hover { color: var(--green); }
+  label.attach-btn svg { width: 20px; height: 20px; fill: currentColor; }
+
   textarea {
     flex: 1;
     resize: none;
@@ -240,6 +325,13 @@
 </style>
 </head>
 <body>
+
+<!-- Drop overlay (full-screen) -->
+<div class="drop-overlay" id="dropOverlay">
+  <svg viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+  <p>放開以附加檔案</p>
+</div>
+
 <div class="app">
   <header>
     <div class="brand-mark">
@@ -254,30 +346,39 @@
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor"/>
       </svg>
-      <p>社群行銷、電商、品牌策略、產品開發<br>把你的工作丟給我。</p>
+      <p>社群行銷、電商、品牌策略、產品開發<br>把你的工作丟給我。<br><span style="font-size:11px;opacity:.7">可拖入圖片或文字檔</span></p>
     </div>
   </div>
 
   <div class="input-area">
+    <div class="attach-row" id="attachRow"></div>
     <div class="input-row">
+      <label class="attach-btn" for="fileInput" title="附加檔案">
+        <svg viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+      </label>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/gif,image/webp,.txt,.md,.csv,.json" style="display:none">
       <textarea id="input" placeholder="輸入你的工作需求…" rows="1"></textarea>
       <button id="send" title="送出">
         <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
     </div>
-    <div class="hint">Enter 送出 &nbsp;·&nbsp; Shift+Enter 換行</div>
+    <div class="hint">Enter 送出 &nbsp;·&nbsp; Shift+Enter 換行 &nbsp;·&nbsp; 📎 可拖入圖片或文字檔（JPG/PNG/txt/csv…）</div>
   </div>
 </div>
 
 <script>
-const chatEl   = document.getElementById('chat');
-const inputEl  = document.getElementById('input');
-const sendBtn  = document.getElementById('send');
-const welcomeEl= document.getElementById('welcome');
-const statusDot= document.getElementById('statusDot');
+const chatEl     = document.getElementById('chat');
+const inputEl    = document.getElementById('input');
+const sendBtn    = document.getElementById('send');
+const welcomeEl  = document.getElementById('welcome');
+const statusDot  = document.getElementById('statusDot');
+const attachRow  = document.getElementById('attachRow');
+const fileInput  = document.getElementById('fileInput');
+const dropOverlay= document.getElementById('dropOverlay');
 
-const messages = [];  // conversation history
-let composing  = false;
+const messages = [];
+let composing    = false;
+let attachedFile = null; // { type:'image'|'text', name, data, mediaType? }
 
 // ── Auto-resize textarea ──
 inputEl.addEventListener('input', () => {
@@ -285,7 +386,7 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
 });
 
-// ── IME composition tracking (中文輸入法) ──
+// ── IME composition tracking ──
 inputEl.addEventListener('compositionstart', () => { composing = true; });
 inputEl.addEventListener('compositionend',   () => { setTimeout(() => { composing = false; }, 0); });
 
@@ -298,56 +399,143 @@ inputEl.addEventListener('keydown', (e) => {
 });
 sendBtn.addEventListener('click', send);
 
+// ── File input (click) ──
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (file) handleFile(file);
+  fileInput.value = '';
+});
+
+// ── Drag and drop ──
+let dragCounter = 0;
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  dropOverlay.classList.add('active');
+});
+document.addEventListener('dragleave', () => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) dropOverlay.classList.remove('active');
+});
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  dropOverlay.classList.remove('active');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+// ── File handling ──
+async function handleFile(file) {
+  const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+  if (file.size > MAX_SIZE) {
+    alert(`檔案太大（${(file.size / 1024 / 1024).toFixed(1)} MB），請上傳 2 MB 以內的檔案`);
+    return;
+  }
+
+  const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const TEXT_EXTS   = ['.txt', '.md', '.csv', '.json'];
+  const isImage = IMAGE_TYPES.includes(file.type);
+  const isText  = TEXT_EXTS.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type === 'text/plain';
+
+  if (!isImage && !isText) {
+    alert('目前支援：圖片（JPG/PNG/GIF/WebP）、文字檔（txt / md / csv / json）');
+    return;
+  }
+
+  try {
+    if (isImage) {
+      const data = await readAsBase64(file);
+      attachedFile = { type: 'image', name: file.name, data, mediaType: file.type };
+      attachRow.innerHTML = `
+        <img src="data:${file.type};base64,${data}" alt="preview">
+        <span class="attach-name">${escHtml(file.name)}</span>
+        <span class="attach-remove" title="移除">✕</span>`;
+    } else {
+      let text = await file.text();
+      const MAX_CHARS = 12000;
+      const truncated = text.length > MAX_CHARS;
+      if (truncated) text = text.slice(0, MAX_CHARS);
+      attachedFile = { type: 'text', name: file.name, data: text, truncated };
+      attachRow.innerHTML = `
+        <span class="attach-icon">📄</span>
+        <span class="attach-name">${escHtml(file.name)}${truncated ? '（已截斷至 12000 字）' : ''}</span>
+        <span class="attach-remove" title="移除">✕</span>`;
+    }
+
+    attachRow.classList.add('show');
+    attachRow.querySelector('.attach-remove').addEventListener('click', clearAttachment);
+    inputEl.focus();
+  } catch (err) {
+    alert('讀取檔案失敗：' + err.message);
+  }
+}
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = (e) => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function clearAttachment() {
+  attachedFile = null;
+  attachRow.classList.remove('show');
+  attachRow.innerHTML = '';
+}
+
 // ── Markdown-lite renderer ──
 function renderMarkdown(text) {
   return text
-    // code blocks
     .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => `<pre><code>${escHtml(c.trim())}</code></pre>`)
-    // inline code
     .replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`)
-    // bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // hr (--- or ===)
     .replace(/^[-=]{3,}\s*$/gm, '<hr>')
-    // h3
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    // bullet
     .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
-    // numbered
     .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    // wrap consecutive <li> in <ul>
     .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
-    // simple table rows
     .replace(/^\|(.+)\|$/gm, row => {
       const cells = row.slice(1,-1).split('|').map(c => c.trim());
       if (cells.every(c => /^[-:]+$/.test(c))) return '';
-      const tag = cells[0] && row.includes('---') ? 'th' : 'td';
       return `<tr>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`;
     })
-    // wrap table rows
     .replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table>${m}</table>`)
-    // line breaks
     .replace(/\n/g, '<br>');
 }
 
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── Append message bubble ──
-function appendMsg(role, content) {
+function appendMsg(role, content, imgInfo = null) {
   if (welcomeEl) welcomeEl.remove();
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
+
   if (role === 'ai') {
     bubble.innerHTML = renderMarkdown(content);
   } else {
-    bubble.textContent = content;
+    if (imgInfo) {
+      const img = document.createElement('img');
+      img.src = `data:${imgInfo.mediaType};base64,${imgInfo.data}`;
+      img.className = 'attach-thumb';
+      bubble.appendChild(img);
+    }
+    if (content) {
+      const span = document.createElement('span');
+      span.textContent = content;
+      bubble.appendChild(span);
+    }
   }
+
   div.appendChild(bubble);
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
@@ -374,11 +562,34 @@ function hideTyping() {
 // ── Send ──
 async function send() {
   const text = inputEl.value.trim();
-  if (!text || sendBtn.disabled) return;
+  if ((!text && !attachedFile) || sendBtn.disabled) return;
 
-  appendMsg('user', text);
-  messages.push({ role: 'user', content: text });
+  // Build API message content
+  let userContent;
+  let imgInfoForDisplay = null;
 
+  if (attachedFile?.type === 'image') {
+    imgInfoForDisplay = { data: attachedFile.data, mediaType: attachedFile.mediaType };
+    userContent = [
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: attachedFile.mediaType, data: attachedFile.data }
+      },
+      { type: 'text', text: text || '請分析這張圖片。' }
+    ];
+  } else if (attachedFile?.type === 'text') {
+    const fileBlock = `【附件：${attachedFile.name}】\n\`\`\`\n${attachedFile.data}\n\`\`\``;
+    userContent = text ? `${fileBlock}\n\n${text}` : `${fileBlock}\n\n請分析這份文件。`;
+  } else {
+    userContent = text;
+  }
+
+  // Display user message
+  appendMsg('user', text, imgInfoForDisplay);
+  messages.push({ role: 'user', content: userContent });
+
+  // Reset input state
+  clearAttachment();
   inputEl.value = '';
   inputEl.style.height = 'auto';
   sendBtn.disabled = true;
