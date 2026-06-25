@@ -246,7 +246,7 @@ IGT 相容性是核心競爭力，新品優先考量。寧缺勿濫。
 ═══════════════════════════════════════
 
 支援的遠端指令（使用者說以下詞彙，系統會自動送出任務到本機 daemon 執行）：
-- 「跑週安全庫存表」「產週安全庫存表」「週安全庫存分析」「安全庫存」「庫存分析」→ 執行安全庫存分析，產出 Excel 存回 NAS
+- 「跑週報」「產週報」「做週報」「出週報」「更新週報」「跑週報表」「跑週安全庫存表」「產週安全庫存表」「安全庫存」「安全庫存分析」「庫存分析」「跑庫存」「庫存週報」「庫存報表」等→ 執行安全庫存分析，產出 Excel 存回 NAS
 
 當使用者觸發任務時，回覆：「好的，已送出指令，本機端收到後約 1 分鐘內完成。完成後你可以問我『跑好了嗎？』」
 
@@ -277,12 +277,34 @@ const COMMAND_QUEUE_DB = 'c5c21fa02bdb46b087a3240068f3659b';
 
 // 支援的遠端任務指令
 const TASK_KEYWORDS = {
+  // 週安全庫存表相關
   '跑週安全庫存表': 'weekly_report',
   '產週安全庫存表': 'weekly_report',
+  '做週安全庫存表': 'weekly_report',
+  '出週安全庫存表': 'weekly_report',
+  '更新週安全庫存表': 'weekly_report',
   '週安全庫存分析': 'weekly_report',
+  '週安全庫存表': 'weekly_report',
+  // 安全庫存相關
   '安全庫存': 'weekly_report',
-  '庫存分析': 'weekly_report',
   '跑安全庫存': 'weekly_report',
+  '做安全庫存': 'weekly_report',
+  '安全庫存分析': 'weekly_report',
+  '安全庫存表': 'weekly_report',
+  // 庫存分析相關
+  '庫存分析': 'weekly_report',
+  '跑庫存': 'weekly_report',
+  '做庫存分析': 'weekly_report',
+  '庫存週報': 'weekly_report',
+  '庫存報表': 'weekly_report',
+  // 週報相關
+  '跑週報表': 'weekly_report',
+  '跑週報': 'weekly_report',
+  '產週報表': 'weekly_report',
+  '產週報': 'weekly_report',
+  '做週報': 'weekly_report',
+  '出週報': 'weekly_report',
+  '更新週報': 'weekly_report',
 };
 
 function detectTaskCommand(text) {
