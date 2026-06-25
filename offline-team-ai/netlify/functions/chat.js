@@ -229,7 +229,10 @@ OFFLINE MARKETING 空間（page_url: https://www.notion.so/08fdc0b670b183758a838
 
 // ── Notion helpers ──
 const NOTION_VERSION = '2022-06-28';
-const NOTION_TIMEOUT_MS = 3500; // 3.5 秒 timeout，確保總時間在 10 秒內
+const NOTION_TIMEOUT_MS = 6000; // 6 秒 timeout（Netlify 總限制 10 秒）
+
+// 售後整合版頁面（包含所有產品保固、維修、保養、聯絡資訊）
+const AFTERSALES_PAGE_ID = '381dc0b670b181f69be9fe7a30225fce';
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -238,27 +241,8 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-async function notionSearch(query) {
-  const res = await fetch('https://api.notion.com/v1/search', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
-      'Notion-Version': NOTION_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query,
-      filter: { value: 'page', property: 'object' },
-      page_size: 2, // 只取最相關的 2 頁
-    }),
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.results || [];
-}
-
 async function fetchBlocks(blockId) {
-  const res = await fetch(`https://api.notion.com/v1/blocks/${blockId}/children?page_size=40`, {
+  const res = await fetch(`https://api.notion.com/v1/blocks/${blockId}/children?page_size=100`, {
     headers: {
       'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
       'Notion-Version': NOTION_VERSION,
@@ -272,22 +256,6 @@ async function fetchBlocks(blockId) {
   return data.results || [];
 }
 
-function extractText(blocks) {
-  return blocks
-    .map(block => {
-      const type = block.type;
-      const rich = block[type]?.rich_text || [];
-      const text = rich.map(t => t.plain_text).join('');
-      if (!text.trim()) return '';
-      if (type.startsWith('heading_')) return `【${text}】`;
-      if (type === 'bulleted_list_item') return `• ${text}`;
-      return text;
-    })
-    .filter(Boolean)
-    .slice(0, 60) // 最多 60 行
-    .join('\n');
-}
-
 function isProductQuery(text) {
   const kw = ['怎麼', '如何', '為什麼', '問題', '壞', '修', '換貨', '退貨', '退款',
               '保固', '組裝', '安裝', '尺寸', '重量', '材質', '規格', '說明書',
@@ -296,49 +264,57 @@ function isProductQuery(text) {
   return kw.some(k => text.includes(k));
 }
 
-// 商品清冊父頁面 ID
-const CATALOG_PAGE_ID = '38adc0b670b180b3a6abf9aa45139243';
-
-// 從問句萃取商品名稱
-function extractProductName(text) {
-  const m = text.match(/^(.{2,8}?)(?:怎麼|如何|為什麼|的|問題|能不能|有沒有|可以|是否)/);
-  return m ? m[1].trim() : text.slice(0, 6);
-}
-
 async function getNotionContext(userMsg) {
   if (!process.env.NOTION_TOKEN) return '';
   if (!isProductQuery(userMsg)) return '';
 
   try {
     const ctx = await withTimeout((async () => {
-      const productName = extractProductName(userMsg);
+      // 直接 fetch 整合版售後手冊（包含所有產品售後文字內容）
+      const blocks = await fetchBlocks(AFTERSALES_PAGE_ID);
+      if (!blocks.length) return '';
 
-      // 層級 1：取商品清冊子頁面（A/B/C）
-      const l1 = (await fetchBlocks(CATALOG_PAGE_ID))
-        .filter(b => b.type === 'child_page')
-        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
-      if (!l1.length) return '';
+      // 找出所有 table 塊，並行 fetch 其 rows
+      const tableBlocks = blocks.filter(b => b.type === 'table');
+      const tableRowsArr = tableBlocks.length
+        ? await Promise.all(tableBlocks.map(b => fetchBlocks(b.id)))
+        : [];
+      const tableRowsMap = {};
+      tableBlocks.forEach((b, i) => { tableRowsMap[b.id] = tableRowsArr[i]; });
 
-      // 找 C. 售後與服務手冊
-      const section = l1.find(p => p.title.includes('C') || p.title.includes('售後')) || l1[l1.length - 1];
+      // 提取所有文字（段落、標題、列表、表格）
+      const lines = [];
+      for (const b of blocks) {
+        const richText = (arr) => (arr || []).map(t => t.plain_text).join('');
 
-      // 層級 2：取售後手冊下的商品子頁面（忽略短文字，直接找子頁面）
-      const l2Blocks = await fetchBlocks(section.id);
+        if (b.type === 'paragraph' || b.type === 'quote') {
+          const t = richText(b[b.type]?.rich_text);
+          if (t.trim()) lines.push(t);
+        } else if (b.type.startsWith('heading_')) {
+          const t = richText(b[b.type]?.rich_text);
+          if (t.trim()) lines.push(`【${t}】`);
+        } else if (b.type === 'bulleted_list_item') {
+          const t = richText(b.bulleted_list_item?.rich_text);
+          if (t.trim()) lines.push(`• ${t}`);
+        } else if (b.type === 'numbered_list_item') {
+          const t = richText(b.numbered_list_item?.rich_text);
+          if (t.trim()) lines.push(t);
+        } else if (b.type === 'table') {
+          const rows = tableRowsMap[b.id] || [];
+          for (const row of rows) {
+            if (row.type === 'table_row') {
+              const cells = row.table_row.cells
+                .map(cell => cell.map(t => t.plain_text).join(''))
+                .join(' | ');
+              if (cells.trim()) lines.push(cells);
+            }
+          }
+        }
+      }
 
-      const l2 = l2Blocks
-        .filter(b => b.type === 'child_page')
-        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
-      if (!l2.length) return '';
-
-      // 找最符合的商品頁面
-      const product = l2.find(p =>
-        p.title.includes(productName) || userMsg.includes(p.title)
-      ) || l2[0];
-
-      // 層級 3：取商品頁面實際內容
-      const l3Blocks = await fetchBlocks(product.id);
-      const content = extractText(l3Blocks);
-      return content ? `\n\n【${product.title}】\n${content}` : '';
+      const text = lines.join('\n');
+      if (!text) return '';
+      return `\n\n【OFFLINE 售後服務手冊】\n${text.slice(0, 5000)}`;
     })(), NOTION_TIMEOUT_MS);
 
     return ctx || '';
