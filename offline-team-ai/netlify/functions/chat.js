@@ -231,40 +231,44 @@ https://app.notion.com/p/38adc0b670b180b3a6abf9aa45139243
 
 // ── Notion helpers ──
 const NOTION_VERSION = '2022-06-28';
+const NOTION_TIMEOUT_MS = 3500; // 3.5 秒 timeout，確保總時間在 10 秒內
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
 
 async function notionSearch(query) {
-  try {
-    const res = await fetch('https://api.notion.com/v1/search', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
-        'Notion-Version': NOTION_VERSION,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        filter: { value: 'page', property: 'object' },
-        page_size: 3,
-      }),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.results || [];
-  } catch { return []; }
+  const res = await fetch('https://api.notion.com/v1/search', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query,
+      filter: { value: 'page', property: 'object' },
+      page_size: 2, // 只取最相關的 2 頁
+    }),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.results || [];
 }
 
 async function fetchBlocks(blockId) {
-  try {
-    const res = await fetch(`https://api.notion.com/v1/blocks/${blockId}/children?page_size=100`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
-        'Notion-Version': NOTION_VERSION,
-      },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.results || [];
-  } catch { return []; }
+  const res = await fetch(`https://api.notion.com/v1/blocks/${blockId}/children?page_size=40`, {
+    headers: {
+      'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+      'Notion-Version': NOTION_VERSION,
+    },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.results || [];
 }
 
 function extractText(blocks) {
@@ -279,6 +283,7 @@ function extractText(blocks) {
       return text;
     })
     .filter(Boolean)
+    .slice(0, 60) // 最多 60 行
     .join('\n');
 }
 
@@ -294,22 +299,26 @@ async function getNotionContext(userMsg) {
   if (!process.env.NOTION_TOKEN) return '';
   if (!isProductQuery(userMsg)) return '';
 
-  const pages = await notionSearch(userMsg);
-  if (!pages.length) return '';
+  try {
+    const ctx = await withTimeout((async () => {
+      const pages = await notionSearch(userMsg);
+      if (!pages.length) return '';
 
-  const parts = await Promise.all(
-    pages.slice(0, 2).map(async page => {
+      // 只取第一頁，節省時間
+      const page = pages[0];
       const title = page.properties?.title?.title?.[0]?.plain_text
                  || page.properties?.Name?.title?.[0]?.plain_text
-                 || '（無標題）';
+                 || '商品清冊';
       const blocks = await fetchBlocks(page.id);
       const content = extractText(blocks);
-      return content ? `【${title}】\n${content}` : '';
-    })
-  );
+      return content ? `\n\n【Notion 商品清冊：${title}】\n${content}` : '';
+    })(), NOTION_TIMEOUT_MS);
 
-  const ctx = parts.filter(Boolean).join('\n\n');
-  return ctx ? `\n\n以下是從 OFFLINE 商品清冊找到的相關資料，請依此回答：\n${ctx}` : '';
+    return ctx || '';
+  } catch (e) {
+    console.log('Notion skipped:', e.message); // timeout 或錯誤就跳過
+    return '';
+  }
 }
 
 // ── Main handler ──
