@@ -8,7 +8,6 @@ offline 週報分析任務
 import glob
 import math
 import os
-import shutil
 import sys
 from datetime import date
 from pathlib import Path
@@ -39,16 +38,6 @@ def find_source_file():
     return Path(files[-1])
 
 
-def output_path():
-    today = date.today()
-    yy    = str(today.year)[2:]
-    base  = f"offline週報分析-{yy}{today.month:02d}{today.day:02d}"
-    # 自動遞增序號（01、02…），避免覆蓋當天已有的檔案
-    for seq in range(1, 100):
-        name = f"{base}{seq:02d}.xlsx"
-        if not (NAS_DIR / name).exists():
-            return NAS_DIR / name
-    return NAS_DIR / f"{base}99.xlsx"
 
 
 def month_range(anchor_year, anchor_month, count):
@@ -335,31 +324,26 @@ def write_sheet2(wb_out, inv, wip, sales, months_6, months_12):
 
 def main():
     source = find_source_file()
-    output = output_path()
 
-    # 複製來源檔
-    if source != output:
-        shutil.copy2(source, output)
-
-    wb_out = openpyxl.load_workbook(output)
-    wb_src = wb_out  # 同一個檔案
+    # 直接在來源檔新增/更新兩個分析分頁，不複製
+    wb = openpyxl.load_workbook(source)
 
     months_3, months_6, months_12 = compute_periods()
 
-    inv   = read_inventory(wb_src)
-    wip   = read_wip(wb_src)
-    sales = read_sales(wb_src)
+    inv   = read_inventory(wb)
+    wip   = read_wip(wb)
+    sales = read_sales(wb)
 
-    s1_total, s1_recommend = write_sheet1(wb_out, inv, wip, sales, months_3, months_12)
-    s2_total, s2_stock     = write_sheet2(wb_out, inv, wip, sales, months_6, months_12)
+    s1_total, s1_recommend = write_sheet1(wb, inv, wip, sales, months_3, months_12)
+    s2_total, s2_stock     = write_sheet2(wb, inv, wip, sales, months_6, months_12)
 
-    wb_out.save(output)
+    wb.save(source)
 
     # 輸出摘要（daemon 擷取後寫入 Notion 結果摘要欄）
     m3 = "/".join(f"{y}-{m:02d}" for y, m in months_3)
     m6 = "/".join(f"{y}-{m:02d}" for y, m in months_6)
     print(
-        f"來源：{source.name} → 輸出：{output.name}\n"
+        f"已更新：{source.name}\n"
         f"近3月：{m3}｜半年：{m6[:15]}...\n"
         f"生產建議：共{s1_total}筆，建議安排{s1_recommend}筆\n"
         f"停產清冊：共{s2_total}筆，仍有庫存{s2_stock}筆"
