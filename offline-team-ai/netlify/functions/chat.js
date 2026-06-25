@@ -264,7 +264,10 @@ async function fetchBlocks(blockId) {
       'Notion-Version': NOTION_VERSION,
     },
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Notion ${res.status}: ${err}`);
+  }
   const data = await res.json();
   return data.results || [];
 }
@@ -310,8 +313,7 @@ async function getNotionContext(userMsg) {
 
     return ctx || '';
   } catch (e) {
-    console.log('[Notion] skipped:', e.message);
-    return '';
+    return `__NOTION_ERR:${e.message}__`;
   }
 }
 
