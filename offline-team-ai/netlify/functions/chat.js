@@ -299,7 +299,7 @@ function isProductQuery(text) {
 // 商品清冊父頁面 ID
 const CATALOG_PAGE_ID = '38adc0b670b180b3a6abf9aa45139243';
 
-// 從問句萃取商品名稱（取動詞前的名詞）
+// 從問句萃取商品名稱
 function extractProductName(text) {
   const m = text.match(/^(.{2,8}?)(?:怎麼|如何|為什麼|的|問題|能不能|有沒有|可以|是否)/);
   return m ? m[1].trim() : text.slice(0, 6);
@@ -313,45 +313,39 @@ async function getNotionContext(userMsg) {
     const ctx = await withTimeout((async () => {
       const productName = extractProductName(userMsg);
 
-      // Step 1：用商品名稱搜尋 Notion
-      const pages = await notionSearch(productName);
-      if (pages.length) {
-        const page = pages[0];
-        const title = page.properties?.title?.title?.[0]?.plain_text
-                   || page.properties?.Name?.title?.[0]?.plain_text
-                   || productName;
-        const blocks = await fetchBlocks(page.id);
-        const content = extractText(blocks);
-        if (content) return `\n\n【${title}】\n${content}`;
-      }
+      // 層級 1：取商品清冊子頁面（A/B/C）
+      const l1 = (await fetchBlocks(CATALOG_PAGE_ID))
+        .filter(b => b.type === 'child_page')
+        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+      if (!l1.length) return '';
 
-      // Step 2：搜尋無結果，直接導航 C.售後 → 各商品子頁
-      const parentBlocks = await fetchBlocks(CATALOG_PAGE_ID);
-      const l1 = parentBlocks.filter(b => b.type === 'child_page')
-                              .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
-      const serviceSection = l1.find(p => p.title.includes('C') || p.title.includes('售後')) || l1[l1.length - 1];
-      if (!serviceSection) return `__NO_SERVICE_SECTION__`;
+      // 找 C. 售後與服務手冊
+      const section = l1.find(p => p.title.includes('C') || p.title.includes('售後')) || l1[l1.length - 1];
 
-      const serviceBlocks = await fetchBlocks(serviceSection.id);
-      const l2 = serviceBlocks.filter(b => b.type === 'child_page')
-                               .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+      // 層級 2：取售後手冊下的商品子頁面
+      const l2Blocks = await fetchBlocks(section.id);
+      const l2Text = extractText(l2Blocks);
+      if (l2Text) return `\n\n【${section.title}】\n${l2Text}`;
 
-      // 找最接近的商品頁面
-      const match = l2.find(p => p.title.includes(productName) || userMsg.includes(p.title));
-      const target = match || l2[0];
-      if (!target) {
-        const content = extractText(serviceBlocks);
-        return content ? `\n\n【${serviceSection.title}】\n${content}` : `__NO_PRODUCT_PAGE__`;
-      }
+      const l2 = l2Blocks
+        .filter(b => b.type === 'child_page')
+        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+      if (!l2.length) return '';
 
-      const productBlocks = await fetchBlocks(target.id);
-      const content = extractText(productBlocks);
-      return content ? `\n\n【${target.title}】\n${content}` : `__EMPTY:${target.title}__`;
+      // 找最符合的商品頁面
+      const product = l2.find(p =>
+        p.title.includes(productName) || userMsg.includes(p.title)
+      ) || l2[0];
+
+      // 層級 3：取商品頁面實際內容
+      const l3Blocks = await fetchBlocks(product.id);
+      const content = extractText(l3Blocks);
+      return content ? `\n\n【${product.title}】\n${content}` : '';
     })(), NOTION_TIMEOUT_MS);
 
     return ctx || '';
   } catch (e) {
-    return `__NOTION_ERR:${e.message}__`;
+    return `__ERR:${e.message}__`;
   }
 }
 
