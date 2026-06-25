@@ -494,7 +494,14 @@ exports.handler = async (event) => {
     // 如詢問任務狀態，查指令佇列
     const taskCtx = await getTaskContext(lastUserMsg);
 
-    const systemPrompt = SYSTEM_PROMPT + timeCtx + notionCtx + taskCtx;
+    // 把任務送出結果注入 system prompt，讓 Claude 直接告知使用者
+    const taskStatusCtx = taskId
+      ? `\n\n【任務已送出成功】指令 ${taskCommand} 已寫入 Notion 佇列，告知使用者「已送出，約 1 分鐘內完成，完成後會自動通知」。`
+      : taskError
+      ? `\n\n【任務送出失敗】錯誤訊息：${taskError}。請直接告知使用者任務送出失敗及原因。`
+      : '';
+
+    const systemPrompt = SYSTEM_PROMPT + timeCtx + notionCtx + taskCtx + taskStatusCtx;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
