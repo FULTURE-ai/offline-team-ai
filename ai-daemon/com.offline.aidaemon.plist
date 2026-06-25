@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.offline.aidaemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/fulture/Claude/Team Offline/Team Offline/ai-daemon/ai_daemon.py</string>
+    </array>
+
+    <!-- 登入後自動啟動 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Crash 後自動重啟 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 標準輸出 / 錯誤 -->
+    <key>StandardOutPath</key>
+    <string>/Users/fulture/Claude/Team Offline/Team Offline/ai-daemon/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/fulture/Claude/Team Offline/Team Offline/ai-daemon/daemon.log</string>
+
+    <!-- 工作目錄 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/fulture/Claude/Team Offline/Team Offline/ai-daemon</string>
+</dict>
+</plist>
