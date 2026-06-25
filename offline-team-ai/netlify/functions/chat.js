@@ -246,9 +246,9 @@ IGT 相容性是核心競爭力，新品優先考量。寧缺勿濫。
 ═══════════════════════════════════════
 
 支援的遠端指令（使用者說以下詞彙，系統會自動送出任務到本機 daemon 執行）：
-- 「跑週報」「產週報」「週報分析」「安全庫存」「庫存分析」→ 執行週報分析，產出 Excel 存回 NAS
+- 「跑週安全庫存表」「產週安全庫存表」「週安全庫存分析」「安全庫存」「庫存分析」→ 執行安全庫存分析，產出 Excel 存回 NAS
 
-當使用者觸發任務時，回覆：「好的，已送出指令，本機端收到後約 1 分鐘內完成。完成後你可以問我『週報好了嗎？』」
+當使用者觸發任務時，回覆：「好的，已送出指令，本機端收到後約 1 分鐘內完成。完成後你可以問我『跑好了嗎？』」
 
 當對話中出現【遠端任務狀態】區塊時，根據其內容回報最新任務進度。若狀態為「完成」，告知使用者任務已完成並簡述結果。若為「錯誤」，告知並建議確認本機 daemon 是否在執行中。
 
@@ -277,9 +277,9 @@ const COMMAND_QUEUE_DB = 'c5c21fa02bdb46b087a3240068f3659b';
 
 // 支援的遠端任務指令
 const TASK_KEYWORDS = {
-  '跑週報': 'weekly_report',
-  '產週報': 'weekly_report',
-  '週報分析': 'weekly_report',
+  '跑週安全庫存表': 'weekly_report',
+  '產週安全庫存表': 'weekly_report',
+  '週安全庫存分析': 'weekly_report',
   '安全庫存': 'weekly_report',
   '庫存分析': 'weekly_report',
   '跑安全庫存': 'weekly_report',
@@ -309,6 +309,8 @@ async function createNotionTask(command) {
     }),
   });
   if (!res.ok) throw new Error(`Notion write ${res.status}`);
+  const data = await res.json();
+  return data.id;   // 回傳 page ID 供前端輪詢
 }
 
 async function getTaskContext(userMsg) {
@@ -471,10 +473,11 @@ exports.handler = async (event) => {
     });
     const timeCtx = `\n當下時間：${now}（台灣）`;
 
-    // 遠端任務：偵測指令 → 寫入 Notion 佇列
+    // 遠端任務：偵測指令 → 寫入 Notion 佇列，取得 taskId 回傳給前端
     const taskCommand = detectTaskCommand(lastUserMsg);
+    let taskId = null;
     if (taskCommand && process.env.NOTION_TOKEN) {
-      try { await createNotionTask(taskCommand); } catch (e) { console.error('Task queue error:', e.message); }
+      try { taskId = await createNotionTask(taskCommand); } catch (e) { console.error('Task queue error:', e.message); }
     }
 
     // 如有產品相關問題，先查 Notion 售後手冊
@@ -516,7 +519,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ content: text }),
+      body: JSON.stringify({ content: text, taskId }),
     };
   } catch (err) {
     console.error('Function error:', err);
