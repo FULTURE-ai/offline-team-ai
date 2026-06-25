@@ -293,27 +293,19 @@ function isProductQuery(text) {
   return kw.some(k => text.includes(k));
 }
 
-async function getNotionContext(userMsg) {
-  if (!process.env.NOTION_TOKEN) { console.log('[Notion] no token'); return ''; }
-  if (!isProductQuery(userMsg))  { console.log('[Notion] not product query'); return ''; }
+// 商品清冊固定頁面 ID（直接抓，不用搜尋）
+const CATALOG_PAGE_ID = '38adc0b670b180b3a6abf9aa45139243';
 
-  console.log('[Notion] searching:', userMsg);
+async function getNotionContext(userMsg) {
+  if (!process.env.NOTION_TOKEN) return '';
+  if (!isProductQuery(userMsg)) return '';
+
   try {
     const ctx = await withTimeout((async () => {
-      const pages = await notionSearch(userMsg);
-      console.log('[Notion] pages found:', pages.length);
-      if (!pages.length) return '';
-
-      const page = pages[0];
-      const title = page.properties?.title?.title?.[0]?.plain_text
-                 || page.properties?.Name?.title?.[0]?.plain_text
-                 || '商品清冊';
-      console.log('[Notion] fetching page:', title);
-      const blocks = await fetchBlocks(page.id);
-      console.log('[Notion] blocks:', blocks.length);
+      const blocks = await fetchBlocks(CATALOG_PAGE_ID);
+      if (!blocks.length) return '';
       const content = extractText(blocks);
-      console.log('[Notion] content length:', content.length);
-      return content ? `\n\n【Notion 商品清冊：${title}】\n${content}` : '';
+      return content ? `\n\n【OFFLINE 商品清冊】\n${content}` : '';
     })(), NOTION_TIMEOUT_MS);
 
     return ctx || '';
