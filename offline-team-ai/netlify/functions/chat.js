@@ -377,9 +377,17 @@ exports.handler = async (event) => {
       ? (lastUserContent.find(c => c.type === 'text')?.text || '')
       : (typeof lastUserContent === 'string' ? lastUserContent : '');
 
+    // 注入當下日期時間（台灣時區）
+    const now = new Date().toLocaleString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', weekday: 'long',
+    });
+    const timeCtx = `\n當下時間：${now}（台灣）`;
+
     // 如有產品相關問題，先查 Notion
     const notionCtx = await getNotionContext(lastUserMsg);
-    const systemPrompt = SYSTEM_PROMPT + notionCtx;
+    const systemPrompt = SYSTEM_PROMPT + timeCtx + notionCtx;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
