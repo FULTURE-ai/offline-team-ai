@@ -75,8 +75,9 @@ def execute_task(command, config):
     if not script.exists():
         raise FileNotFoundError(f"找不到任務腳本：{script}")
 
+    # 用 login shell 執行，確保繼承使用者的 NAS 掛載與完整環境
     result = subprocess.run(
-        ["python3", str(script)],
+        ["/bin/bash", "-l", "-c", f"python3 {str(script)}"],
         capture_output=True,
         text=True,
         timeout=300,
