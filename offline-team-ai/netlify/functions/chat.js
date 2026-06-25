@@ -296,8 +296,21 @@ function isProductQuery(text) {
   return kw.some(k => text.includes(k));
 }
 
-// 商品清冊固定頁面 ID（直接抓，不用搜尋）
+// 商品清冊父頁面 ID
 const CATALOG_PAGE_ID = '38adc0b670b180b3a6abf9aa45139243';
+
+// 判斷要查哪個子頁面
+function getTargetSubpage(userMsg, childPages) {
+  const serviceKw = ['組裝', '安裝', '保固', '退', '換貨', '退款', '客服', '故障', '壞', '缺件', '不能用', '瑕疵', '說明書', '教學', '影片'];
+  const specKw    = ['尺寸', '重量', '材質', '規格', '容量', '承重', '顏色'];
+
+  const isService = serviceKw.some(k => userMsg.includes(k));
+  const isSpec    = specKw.some(k => userMsg.includes(k));
+
+  if (isService) return childPages.find(p => p.title.includes('C') || p.title.includes('售後')) || childPages[2];
+  if (isSpec)    return childPages.find(p => p.title.includes('A') || p.title.includes('規格')) || childPages[0];
+  return childPages[2]; // 預設查售後手冊
+}
 
 async function getNotionContext(userMsg) {
   if (!process.env.NOTION_TOKEN) return '';
@@ -305,10 +318,22 @@ async function getNotionContext(userMsg) {
 
   try {
     const ctx = await withTimeout((async () => {
-      const blocks = await fetchBlocks(CATALOG_PAGE_ID);
-      if (!blocks.length) return '';
+      // Step 1：抓父頁面的子頁面清單
+      const parentBlocks = await fetchBlocks(CATALOG_PAGE_ID);
+      const childPages = parentBlocks
+        .filter(b => b.type === 'child_page')
+        .map(b => ({ id: b.id, title: b.child_page?.title || '' }));
+
+      if (!childPages.length) return `__NO_CHILDREN__`;
+
+      // Step 2：選對應子頁面
+      const target = getTargetSubpage(userMsg, childPages);
+      if (!target) return '';
+
+      // Step 3：抓子頁面內容
+      const blocks = await fetchBlocks(target.id);
       const content = extractText(blocks);
-      return content ? `\n\n【OFFLINE 商品清冊】\n${content}` : '';
+      return content ? `\n\n【${target.title}】\n${content}` : `__EMPTY:${target.title}__`;
     })(), NOTION_TIMEOUT_MS);
 
     return ctx || '';
