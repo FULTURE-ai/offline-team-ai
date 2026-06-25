@@ -242,6 +242,17 @@ IGT 相容性是核心競爭力，新品優先考量。寧缺勿濫。
 - 對外物料需符合 offline CIS 規範（banner、DM、名片、吊牌）
 
 ═══════════════════════════════════════
+遠端任務系統
+═══════════════════════════════════════
+
+支援的遠端指令（使用者說以下詞彙，系統會自動送出任務到本機 daemon 執行）：
+- 「跑週報」「產週報」「週報分析」「安全庫存」「庫存分析」→ 執行週報分析，產出 Excel 存回 NAS
+
+當使用者觸發任務時，回覆：「好的，已送出指令，本機端收到後約 1 分鐘內完成。完成後你可以問我『週報好了嗎？』」
+
+當對話中出現【遠端任務狀態】區塊時，根據其內容回報最新任務進度。若狀態為「完成」，告知使用者任務已完成並簡述結果。若為「錯誤」，告知並建議確認本機 daemon 是否在執行中。
+
+═══════════════════════════════════════
 Notion 產品知識庫
 ═══════════════════════════════════════
 
@@ -256,10 +267,85 @@ OFFLINE MARKETING 空間（page_url: https://www.notion.so/08fdc0b670b183758a838
 
 // ── Notion helpers ──
 const NOTION_VERSION = '2022-06-28';
-const NOTION_TIMEOUT_MS = 6000; // 6 秒 timeout（Netlify 總限制 10 秒）
+const NOTION_TIMEOUT_MS = 6000;
 
-// 售後整合版頁面（包含所有產品保固、維修、保養、聯絡資訊）
+// 售後整合版頁面
 const AFTERSALES_PAGE_ID = '381dc0b670b181f69be9fe7a30225fce';
+
+// 遠端任務指令佇列 DB
+const COMMAND_QUEUE_DB = 'c5c21fa02bdb46b087a3240068f3659b';
+
+// 支援的遠端任務指令
+const TASK_KEYWORDS = {
+  '跑週報': 'weekly_report',
+  '產週報': 'weekly_report',
+  '週報分析': 'weekly_report',
+  '安全庫存': 'weekly_report',
+  '庫存分析': 'weekly_report',
+  '跑安全庫存': 'weekly_report',
+};
+
+function detectTaskCommand(text) {
+  for (const [kw, cmd] of Object.entries(TASK_KEYWORDS)) {
+    if (text.includes(kw)) return cmd;
+  }
+  return null;
+}
+
+async function createNotionTask(command) {
+  const res = await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      parent: { database_id: COMMAND_QUEUE_DB },
+      properties: {
+        '指令': { title: [{ text: { content: command } }] },
+        '狀態': { select: { name: '待執行' } },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Notion write ${res.status}`);
+}
+
+async function getTaskContext(userMsg) {
+  if (!process.env.NOTION_TOKEN) return '';
+  const statusKw = ['好了嗎', '完成了嗎', '跑好了', '任務狀態', '週報狀態', '結果'];
+  if (!statusKw.some(k => userMsg.includes(k))) return '';
+
+  try {
+    const res = await fetch(`https://api.notion.com/v1/databases/${COMMAND_QUEUE_DB}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+        'Notion-Version': NOTION_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        page_size: 5,
+      }),
+    });
+    if (!res.ok) return '';
+    const data = await res.json();
+    if (!data.results?.length) return '';
+
+    const lines = data.results.map(p => {
+      const cmd    = p.properties['指令']?.title?.[0]?.text?.content || '未知';
+      const status = p.properties['狀態']?.select?.name || '未知';
+      const result = p.properties['結果摘要']?.rich_text?.[0]?.text?.content || '';
+      const time   = new Date(p.created_time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+      return `• ${cmd}：${status}${result ? `（${result}）` : ''} ─ ${time}`;
+    }).join('\n');
+
+    return `\n\n【遠端任務狀態】\n${lines}`;
+  } catch (e) {
+    return '';
+  }
+}
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -385,9 +471,19 @@ exports.handler = async (event) => {
     });
     const timeCtx = `\n當下時間：${now}（台灣）`;
 
-    // 如有產品相關問題，先查 Notion
+    // 遠端任務：偵測指令 → 寫入 Notion 佇列
+    const taskCommand = detectTaskCommand(lastUserMsg);
+    if (taskCommand && process.env.NOTION_TOKEN) {
+      try { await createNotionTask(taskCommand); } catch (e) { console.error('Task queue error:', e.message); }
+    }
+
+    // 如有產品相關問題，先查 Notion 售後手冊
     const notionCtx = await getNotionContext(lastUserMsg);
-    const systemPrompt = SYSTEM_PROMPT + timeCtx + notionCtx;
+
+    // 如詢問任務狀態，查指令佇列
+    const taskCtx = await getTaskContext(lastUserMsg);
+
+    const systemPrompt = SYSTEM_PROMPT + timeCtx + notionCtx + taskCtx;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
