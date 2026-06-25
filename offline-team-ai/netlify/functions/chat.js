@@ -265,12 +265,12 @@ exports.handler = async (event) => {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error('Anthropic API error:', err);
+      const errText = await response.text();
+      console.error('Anthropic API error:', errText);
       return {
         statusCode: 502,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ error: 'API 呼叫失敗，請稍後再試。' }),
+        body: JSON.stringify({ error: `API 錯誤 ${response.status}: ${errText}` }),
       };
     }
 
