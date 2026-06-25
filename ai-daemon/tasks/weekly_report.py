@@ -31,7 +31,8 @@ WEEKS_PER_MONTH = 4.33
 
 
 def find_source_file():
-    pattern = str(NAS_DIR / "offline週報分析-[0-9][0-9][0-9][0-9][0-9][0-9].xlsx")
+    # 格式 YYMMDDNN（8碼，含序號），例如 offline週報分析-26062501.xlsx
+    pattern = str(NAS_DIR / "offline週報分析-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].xlsx")
     files = sorted(glob.glob(pattern))
     if not files:
         raise FileNotFoundError(f"找不到整合來源檔於 {NAS_DIR}")
@@ -40,9 +41,14 @@ def find_source_file():
 
 def output_path():
     today = date.today()
-    yy  = str(today.year)[2:]
-    name = f"offline週報分析-{yy}{today.month:02d}{today.day:02d}.xlsx"
-    return NAS_DIR / name
+    yy    = str(today.year)[2:]
+    base  = f"offline週報分析-{yy}{today.month:02d}{today.day:02d}"
+    # 自動遞增序號（01、02…），避免覆蓋當天已有的檔案
+    for seq in range(1, 100):
+        name = f"{base}{seq:02d}.xlsx"
+        if not (NAS_DIR / name).exists():
+            return NAS_DIR / name
+    return NAS_DIR / f"{base}99.xlsx"
 
 
 def month_range(anchor_year, anchor_month, count):
