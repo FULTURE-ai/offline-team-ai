@@ -223,11 +223,9 @@ OFFLINE MARKETING 空間（page_url: https://www.notion.so/08fdc0b670b183758a838
 - B. 行銷內容庫：行銷素材、賣點
 - C. 售後與服務手冊：退換貨、客服
 
-OFFLINE 商品清冊（客服用，含 Q&A 和保固）：
-https://app.notion.com/p/38adc0b670b180b3a6abf9aa45139243
-
-搜尋流程：notion-search → notion-fetch → 依實際內容生成，不補充 Notion 沒有的數字。
-找不到：告知使用者，請提供或先建立 Notion 頁面。`;
+客服回覆原則：
+若對話中有【Notion 商品清冊】區塊，務必依據其內容回答，不可捏造數字或步驟。
+若無商品資料，誠實告知並請顧客聯繫客服 or 提供更多資訊。`;
 
 // ── Notion helpers ──
 const NOTION_VERSION = '2022-06-28';
@@ -296,27 +294,31 @@ function isProductQuery(text) {
 }
 
 async function getNotionContext(userMsg) {
-  if (!process.env.NOTION_TOKEN) return '';
-  if (!isProductQuery(userMsg)) return '';
+  if (!process.env.NOTION_TOKEN) { console.log('[Notion] no token'); return ''; }
+  if (!isProductQuery(userMsg))  { console.log('[Notion] not product query'); return ''; }
 
+  console.log('[Notion] searching:', userMsg);
   try {
     const ctx = await withTimeout((async () => {
       const pages = await notionSearch(userMsg);
+      console.log('[Notion] pages found:', pages.length);
       if (!pages.length) return '';
 
-      // 只取第一頁，節省時間
       const page = pages[0];
       const title = page.properties?.title?.title?.[0]?.plain_text
                  || page.properties?.Name?.title?.[0]?.plain_text
                  || '商品清冊';
+      console.log('[Notion] fetching page:', title);
       const blocks = await fetchBlocks(page.id);
+      console.log('[Notion] blocks:', blocks.length);
       const content = extractText(blocks);
+      console.log('[Notion] content length:', content.length);
       return content ? `\n\n【Notion 商品清冊：${title}】\n${content}` : '';
     })(), NOTION_TIMEOUT_MS);
 
     return ctx || '';
   } catch (e) {
-    console.log('Notion skipped:', e.message); // timeout 或錯誤就跳過
+    console.log('[Notion] skipped:', e.message);
     return '';
   }
 }
