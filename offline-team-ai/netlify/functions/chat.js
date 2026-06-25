@@ -229,6 +229,90 @@ https://app.notion.com/p/38adc0b670b180b3a6abf9aa45139243
 搜尋流程：notion-search → notion-fetch → 依實際內容生成，不補充 Notion 沒有的數字。
 找不到：告知使用者，請提供或先建立 Notion 頁面。`;
 
+// ── Notion helpers ──
+const NOTION_VERSION = '2022-06-28';
+
+async function notionSearch(query) {
+  try {
+    const res = await fetch('https://api.notion.com/v1/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+        'Notion-Version': NOTION_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        filter: { value: 'page', property: 'object' },
+        page_size: 3,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
+  } catch { return []; }
+}
+
+async function fetchBlocks(blockId) {
+  try {
+    const res = await fetch(`https://api.notion.com/v1/blocks/${blockId}/children?page_size=100`, {
+      headers: {
+        'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+        'Notion-Version': NOTION_VERSION,
+      },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
+  } catch { return []; }
+}
+
+function extractText(blocks) {
+  return blocks
+    .map(block => {
+      const type = block.type;
+      const rich = block[type]?.rich_text || [];
+      const text = rich.map(t => t.plain_text).join('');
+      if (!text.trim()) return '';
+      if (type.startsWith('heading_')) return `【${text}】`;
+      if (type === 'bulleted_list_item') return `• ${text}`;
+      return text;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function isProductQuery(text) {
+  const kw = ['怎麼', '如何', '為什麼', '問題', '壞', '修', '換貨', '退貨', '退款',
+              '保固', '組裝', '安裝', '尺寸', '重量', '材質', '規格', '說明書',
+              '教學', '影片', '配件', '零件', '客服', '瑕疵', '故障', '缺件',
+              '不能用', '沒辦法', '收到', '商品', '產品'];
+  return kw.some(k => text.includes(k));
+}
+
+async function getNotionContext(userMsg) {
+  if (!process.env.NOTION_TOKEN) return '';
+  if (!isProductQuery(userMsg)) return '';
+
+  const pages = await notionSearch(userMsg);
+  if (!pages.length) return '';
+
+  const parts = await Promise.all(
+    pages.slice(0, 2).map(async page => {
+      const title = page.properties?.title?.title?.[0]?.plain_text
+                 || page.properties?.Name?.title?.[0]?.plain_text
+                 || '（無標題）';
+      const blocks = await fetchBlocks(page.id);
+      const content = extractText(blocks);
+      return content ? `【${title}】\n${content}` : '';
+    })
+  );
+
+  const ctx = parts.filter(Boolean).join('\n\n');
+  return ctx ? `\n\n以下是從 OFFLINE 商品清冊找到的相關資料，請依此回答：\n${ctx}` : '';
+}
+
+// ── Main handler ──
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -248,6 +332,11 @@ exports.handler = async (event) => {
 
   try {
     const { messages } = JSON.parse(event.body);
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+
+    // 如有產品相關問題，先查 Notion
+    const notionCtx = await getNotionContext(lastUserMsg);
+    const systemPrompt = SYSTEM_PROMPT + notionCtx;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -259,7 +348,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages,
       }),
     });
@@ -279,10 +368,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       body: JSON.stringify({ content: text }),
     };
   } catch (err) {
@@ -290,7 +376,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ error: '伺服器錯誤，請稍後再試。' }),
+      body: JSON.stringify({ error: `伺服器錯誤：${err.message}` }),
     };
   }
 };
