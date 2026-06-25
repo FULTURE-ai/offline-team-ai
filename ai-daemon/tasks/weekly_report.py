@@ -32,9 +32,13 @@ WEEKS_PER_MONTH = 4.33
 def find_source_file():
     if not NAS_DIR.exists():
         raise FileNotFoundError(f"NAS 目錄不存在或未掛載：{NAS_DIR}")
-    files = sorted(NAS_DIR.glob("offline週報分析-[0-9]*.xlsx"))
+    # 避免 SMB 掛載的 Unicode 正規化問題，用 iterdir 過濾取代 glob
+    files = sorted(
+        f for f in NAS_DIR.iterdir()
+        if f.suffix == '.xlsx' and f.name.lower().startswith('offline')
+    )
     if not files:
-        raise FileNotFoundError(f"找不到整合來源檔於 {NAS_DIR}（目錄存在但沒有符合的 xlsx）")
+        raise FileNotFoundError(f"找不到整合來源檔於 {NAS_DIR}")
     return files[-1]
 
 
