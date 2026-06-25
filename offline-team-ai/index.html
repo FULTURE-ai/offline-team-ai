@@ -649,6 +649,8 @@ async function send() {
     // 若本次觸發了遠端任務，啟動背景輪詢，完成後自動回報
     if (data.taskId) {
       pollTaskUntilDone(data.taskId);
+    } else if (data.taskError) {
+      appendMsg('ai', `⚠️ 任務送出失敗：${data.taskError}`);
     }
 
   } catch (e) {

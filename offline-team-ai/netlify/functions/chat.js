@@ -476,8 +476,16 @@ exports.handler = async (event) => {
     // 遠端任務：偵測指令 → 寫入 Notion 佇列，取得 taskId 回傳給前端
     const taskCommand = detectTaskCommand(lastUserMsg);
     let taskId = null;
+    let taskError = null;
     if (taskCommand && process.env.NOTION_TOKEN) {
-      try { taskId = await createNotionTask(taskCommand); } catch (e) { console.error('Task queue error:', e.message); }
+      try {
+        taskId = await createNotionTask(taskCommand);
+      } catch (e) {
+        taskError = e.message;
+        console.error('Task queue error:', e.message);
+      }
+    } else if (taskCommand && !process.env.NOTION_TOKEN) {
+      taskError = 'NOTION_TOKEN 未設定';
     }
 
     // 如有產品相關問題，先查 Notion 售後手冊
@@ -519,7 +527,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ content: text, taskId }),
+      body: JSON.stringify({ content: text, taskId, taskError }),
     };
   } catch (err) {
     console.error('Function error:', err);
