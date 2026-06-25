@@ -646,6 +646,11 @@ async function send() {
     appendMsg('ai', reply);
     messages.push({ role: 'assistant', content: reply });
 
+    // 若本次觸發了遠端任務，啟動背景輪詢，完成後自動回報
+    if (data.taskId) {
+      pollTaskUntilDone(data.taskId);
+    }
+
   } catch (e) {
     hideTyping();
     appendMsg('ai', '⚠️ 連線錯誤，請確認網路後再試。');
@@ -655,6 +660,39 @@ async function send() {
     statusDot.style.background = 'var(--green)';
     inputEl.focus();
   }
+}
+
+// ── 任務自動回報：輪詢 task-status 直到完成 ──
+function pollTaskUntilDone(taskId) {
+  const INTERVAL = 30 * 1000;   // 30 秒查一次
+  const TIMEOUT  = 10 * 60 * 1000; // 最多等 10 分鐘
+  const started  = Date.now();
+
+  const timer = setInterval(async () => {
+    // 超時保護
+    if (Date.now() - started > TIMEOUT) {
+      clearInterval(timer);
+      return;
+    }
+    try {
+      const res  = await fetch(`/.netlify/functions/task-status?id=${taskId}`);
+      const data = await res.json();
+
+      if (data.status === '完成' || data.status === '錯誤') {
+        clearInterval(timer);
+        let msg;
+        if (data.status === '完成') {
+          msg = `✅ 週安全庫存表已完成！\n\n${data.result || ''}`;
+        } else {
+          msg = `❌ 任務執行失敗：${data.result || '未知錯誤'}\n\n請確認本機 daemon 是否正在執行。`;
+        }
+        appendMsg('ai', msg);
+        messages.push({ role: 'assistant', content: msg });
+      }
+    } catch (_) {
+      // 網路異常時靜默忽略，等下次輪詢
+    }
+  }, INTERVAL);
 }
 </script>
 </body>
