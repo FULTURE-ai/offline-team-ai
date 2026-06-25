@@ -343,7 +343,11 @@ exports.handler = async (event) => {
 
   try {
     const { messages } = JSON.parse(event.body);
-    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    const lastUserContent = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    // 支援 array content（含圖片的訊息）
+    const lastUserMsg = Array.isArray(lastUserContent)
+      ? (lastUserContent.find(c => c.type === 'text')?.text || '')
+      : (typeof lastUserContent === 'string' ? lastUserContent : '');
 
     // 如有產品相關問題，先查 Notion
     const notionCtx = await getNotionContext(lastUserMsg);
