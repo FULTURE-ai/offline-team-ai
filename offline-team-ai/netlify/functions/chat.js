@@ -322,10 +322,8 @@ async function getNotionContext(userMsg) {
       // 找 C. 售後與服務手冊
       const section = l1.find(p => p.title.includes('C') || p.title.includes('售後')) || l1[l1.length - 1];
 
-      // 層級 2：取售後手冊下的商品子頁面
+      // 層級 2：取售後手冊下的商品子頁面（忽略短文字，直接找子頁面）
       const l2Blocks = await fetchBlocks(section.id);
-      const l2Text = extractText(l2Blocks);
-      if (l2Text) return `\n\n【${section.title}】\n${l2Text}`;
 
       const l2 = l2Blocks
         .filter(b => b.type === 'child_page')
