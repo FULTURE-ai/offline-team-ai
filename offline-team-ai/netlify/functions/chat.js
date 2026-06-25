@@ -349,6 +349,9 @@ exports.handler = async (event) => {
     const notionCtx = await getNotionContext(lastUserMsg);
     const systemPrompt = SYSTEM_PROMPT + notionCtx;
 
+    // Debug header（上線後移除）
+    const debugInfo = `[DEBUG] isProduct=${isProductQuery(lastUserMsg)} notionLen=${notionCtx.length}\n\n`;
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -380,7 +383,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ content: text }),
+      body: JSON.stringify({ content: debugInfo + text }),
     };
   } catch (err) {
     console.error('Function error:', err);
