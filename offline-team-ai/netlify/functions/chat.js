@@ -272,7 +272,7 @@ async function getNotionContext(userMsg) {
     const ctx = await withTimeout((async () => {
       // 直接 fetch 整合版售後手冊（包含所有產品售後文字內容）
       const blocks = await fetchBlocks(AFTERSALES_PAGE_ID);
-      if (!blocks.length) return '';
+      if (!blocks.length) return '__AFTERSALES_EMPTY__';
 
       // 找出所有 table 塊，並行 fetch 其 rows
       const tableBlocks = blocks.filter(b => b.type === 'table');
@@ -313,7 +313,7 @@ async function getNotionContext(userMsg) {
       }
 
       const text = lines.join('\n');
-      if (!text) return '';
+      if (!text) return `__AFTERSALES_NO_TEXT__ blocks=${blocks.length} types=${blocks.slice(0,5).map(b=>b.type).join(',')}`;
       return `\n\n【OFFLINE 售後服務手冊】\n${text.slice(0, 5000)}`;
     })(), NOTION_TIMEOUT_MS);
 
